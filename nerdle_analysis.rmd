@@ -1,0 +1,124 @@
+---
+title: "Nerdle Analysis"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(stringr)
+library(dplyr)
+library(kableExtra)
+source("nerdlefunctions.r")
+dfEquations <- readRDS("validEquations.rds")
+dfEqForms <- unique(dfEquations$Form)
+byFormTbl <- dfEquations %>% group_by(Form) %>% summarize(n = n()) %>% arrange(desc(n))
+byEqPos <- byFormTbl %>% mutate(EqPos = stringr::str_locate(byFormTbl$Form, "=")[,1]) %>%
+  group_by(EqPos) %>% summarize(Count = sum(n))
+parsedNumbers <- t(sapply(dfEquations$Digits, parseDigits, NULL))
+temp <- unlist(parsedNumbers)
+byDigit <- data.frame(Digit = 0:9, Count = 0)
+for (i in 0:9){
+  byDigit[i + 1, "Count"] <- sum(temp == i)
+}
+byOperator <- data.frame(Operator = c("+", "-", "*", "/"), 
+                         Count = 0)
+for (i in 1:nrow(byFormTbl)) {
+  byOperator[byOperator$Operator == "+", "Count"] <-
+    byOperator[byOperator$Operator == "+", "Count"] +
+    str_count(as.character(unlist(byFormTbl[i, "Form"])),"\\+") *
+    as.integer(byFormTbl[i, "n"])
+  byOperator[byOperator$Operator == "-", "Count"] <-
+    byOperator[byOperator$Operator == "-", "Count"] +
+    str_count(as.character(unlist(byFormTbl[i, "Form"])),"-") *
+    as.integer(byFormTbl[i, "n"])
+  byOperator[byOperator$Operator == "*", "Count"] <-
+    byOperator[byOperator$Operator == "*", "Count"] +
+    str_count(as.character(unlist(byFormTbl[i, "Form"])),"//*") *
+    as.integer(byFormTbl[i, "n"])
+  byOperator[byOperator$Operator == "/", "Count"] <-
+    byOperator[byOperator$Operator == "/", "Count"] + 
+    str_count(as.character(unlist(byFormTbl[i, "Form"])),"\\/") *
+    as.integer(byFormTbl[i, "n"])
+}
+
+```
+Thinking about Nerdle.  I believe all Nerdle equations can be written in one of the following `r length(dfEqForms)` forms.
+
+```{r echo=FALSE}
+kable(dfEqForms, caption = "Forms of Nerdle Equations", col.names = "")
+```
+
+         
+*Have I missed any?*
+
+Note that d + dd - d is the same as d - d + dd so we can arbitrarily pick one.  Leading zeros and single digit zeros are not allowed except that the right hand side may be a single digit zero.
+
+****    
+
+There are **`r nrow(dfEquations)`** valid equations.  Here are the number by form
+
+```{r echo=FALSE}
+print(byFormTbl, n = length(dfEqForms))
+```
+
+****    
+
+**Position of '=' sign**    
+By inspection we see that the '=' sign is most likely to be in the 6th position.  Here are the numbers
+```{r echo=FALSE}
+print(byEqPos)
+```
+
+****    
+
+**Frequencies of Digits**
+```{r echo=FALSE}
+print(byDigit)
+barplot(byDigit$Count, xlab = "Digit", ylab = "Frequency (Count)", names.arg = byDigit$Digit)
+```
+
+****    
+
+**Frequencies of Operators**    
+```{r echo=FALSE}
+print(byOperator)
+barplot(byOperator$Count, xlab = "Operator", ylab = "Frequency (Count)", names.arg = byOperator$Operator)
+```
+
+Interesting that subtraction is the most common operator.  
+
+****    
+
+**Frequency of digit by location**    
+Equations with two operators have five digits (e.g., "d-d+dd=d"). 
+Equations with one operator have six digits (e.g., "dd-dd=dd").
+Labelling the positions from one to five (or six) from left to right,
+we show the frequency of digit by form of equation.
+
+```{r echo=FALSE, results='asis'}
+lstDigitsByPosition <- vector("list", length(eqForms))
+names(lstDigitsByPosition) <- eqForms
+for (eqForm in levels(dfEquations$Form)){
+  nDigitsInForm <- stringr::str_count(eqForm, "d")
+  dfDigitsByPosition <- data.frame(Digit = 0:9,
+                                 Pos1 = 0, Pos2 = 0, Pos3 = 0,
+                                 Pos4 = 0, Pos5 = 0, Pos6 = 0)
+  idx <- dfEquations$Form == eqForm 
+  temp <- data.frame(unlist(t(sapply(dfEquations[idx,]$Digits, parseDigits, NULL))))
+  for (d in 0:9){
+    tempd <- temp == d
+    dByPos <- apply(tempd, 2, sum)
+    dfDigitsByPosition[d+1, 2:(nDigitsInForm + 1)] <-
+      dfDigitsByPosition[d+1, 2:(nDigitsInForm + 1)] +
+      dByPos
+  }
+  dfDigitsByPosition <- dfDigitsByPosition %>% mutate(Total = Pos1+Pos2+Pos3+Pos4+Pos5+Pos6)
+  lstDigitsByPosition[[eqForm]] <- dfDigitsByPosition
+
+  print(kableExtra::kable(dfDigitsByPosition, 
+                          caption = paste("Form of Equation:", eqForm), 
+                          format = "html"))
+}
+```
+
